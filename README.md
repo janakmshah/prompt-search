@@ -17,7 +17,7 @@ Long-running Copilot CLI workflows often contain prompts worth reusing: PR revie
 | Feature | What it gives you |
 | --- | --- |
 | Typo-tolerant fuzzy search | Uses Fuse.js to find prompts from fragments, approximate wording, and common typos. |
-| Match highlighting | Highlights matched text in the interactive results table. |
+| Match highlighting | Highlights matched text and centers long prompt rows around the first match. |
 | Session-aware results | See the session summary, branch, source, and relative age beside each match. |
 | Interactive picker | Navigate results in a compact terminal UI with tabs and keyboard shortcuts. |
 | Clipboard handoff | Press Enter to copy the selected prompt and print it for visibility. |
@@ -118,6 +118,7 @@ Search is intentionally forgiving. Use the words you remember, even if the phras
 | `rupper duck` | `rubber duck` | Fuse.js handles common typos and near matches. |
 | `pruduct acton` | `product action` | Multiple misspelled terms can still match. |
 | `spin 4` | `spin up 4 review agents` | Short fragments can find longer prompts. |
+| `interactively` | `interaction tests` | Closely related word forms can match when the edit distance is small. |
 
 Exact phrase and full-token matches are still ranked higher than looser fuzzy matches when both are present.
 

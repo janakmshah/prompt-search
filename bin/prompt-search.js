@@ -9,6 +9,7 @@ const { spawnSync } = require('child_process');
 const Fuse = require('fuse.js');
 
 const DEFAULT_LIMIT = 200;
+const PROMPT_WORDS_BEFORE_MATCH = 4;
 const TABS = ['all', 'sessions', 'history'];
 const FUSE_OPTIONS = {
   includeMatches: true,
@@ -298,9 +299,10 @@ function searchItems(items, query, tab, limit) {
   const fuse = new Fuse(filtered.map(toSearchableItem), FUSE_OPTIONS);
   const ranked = fuse.search(query.trim())
     .map((result) => ({
-      item: withMatchRanges(result.item, result.matches, normalizedQuery),
+      item: withMatchRanges(result.item, normalizedQuery),
       score: rankedFuseScore(result, normalizedQuery)
     }))
+    .filter(({ item }) => item.hasReliableMatch)
     .sort((a, b) => {
       if (a.score !== b.score) {
         return a.score - b.score;
@@ -325,24 +327,26 @@ function toSearchableItem(item) {
   };
 }
 
-function withMatchRanges(item, matches, normalizedQuery) {
-  const promptFallbackRanges = rangesForKey(matches, 'searchablePrompt');
-  const sessionFallbackRanges = rangesForKey(matches, 'searchableSessionSummary');
+function withMatchRanges(item, normalizedQuery) {
+  const allMatchRanges = [
+    reliableRangesForText(item.searchablePrompt, normalizedQuery),
+    reliableRangesForText(item.searchableSessionSummary, normalizedQuery),
+    reliableRangesForText(item.searchableBranch, normalizedQuery),
+    reliableRangesForText(item.searchableRepository, normalizedQuery),
+    reliableRangesForText(item.searchableCwd, normalizedQuery)
+  ];
 
   return {
     ...item,
+    hasReliableMatch: allMatchRanges.some((ranges) => ranges.length > 0),
     matchRanges: {
-      prompt: highlightRangesForText(item.searchablePrompt, normalizedQuery, promptFallbackRanges),
-      sessionSummary: highlightRangesForText(
-        item.searchableSessionSummary,
-        normalizedQuery,
-        sessionFallbackRanges
-      )
+      prompt: allMatchRanges[0],
+      sessionSummary: allMatchRanges[1]
     }
   };
 }
 
-function highlightRangesForText(text, normalizedQuery, fallbackRanges) {
+function reliableRangesForText(text, normalizedQuery) {
   const ranges = [];
 
   for (const token of queryTokens(normalizedQuery)) {
@@ -358,7 +362,7 @@ function highlightRangesForText(text, normalizedQuery, fallbackRanges) {
     }
   }
 
-  return ranges.length > 0 ? mergeRanges(ranges) : fallbackRanges;
+  return mergeRanges(ranges);
 }
 
 function queryTokens(normalizedQuery) {
@@ -413,7 +417,7 @@ function maxTypoDistance(token) {
 
 function wordRanges(text) {
   const ranges = [];
-  const matcher = /[A-Za-z0-9]+/g;
+  const matcher = /[A-Za-z0-9]+(?:['’][A-Za-z0-9]+)*/g;
   let match = matcher.exec(text);
 
   while (match) {
@@ -454,15 +458,6 @@ function levenshteinDistance(left, right, maxDistance) {
   }
 
   return previous[right.length];
-}
-
-function rangesForKey(matches, key) {
-  if (!Array.isArray(matches)) {
-    return [];
-  }
-
-  const match = matches.find((candidate) => candidate.key === key);
-  return mergeRanges(match ? match.indices : []);
 }
 
 function mergeRanges(ranges) {
@@ -810,37 +805,68 @@ function styledCell(value, width) {
 }
 
 function highlightedCell(value, ranges, width) {
-  const truncated = truncateForHighlight(String(value || ''), width);
-  const highlighted = applyHighlights(truncated.content, ranges);
-  const padding = ' '.repeat(Math.max(0, width - visibleLength(truncated.text)));
-  return `${highlighted}${truncated.ellipsis}${padding}`;
+  const snippet = snippetForHighlight(String(value || ''), ranges, width);
+  const highlighted = applyHighlights(snippet.content, snippet.ranges);
+  const padding = ' '.repeat(Math.max(0, width - visibleLength(snippet.text)));
+  return `${highlighted}${snippet.ellipsis}${padding}`;
 }
 
-function truncateForHighlight(value, width) {
-  const chars = Array.from(value);
-  if (chars.length <= width) {
+function snippetForHighlight(value, ranges, width) {
+  if (visibleLength(value) <= width) {
     return {
       content: value,
       ellipsis: '',
+      ranges,
       text: value
     };
   }
 
   if (width <= 3) {
-    const content = chars.slice(0, width).join('');
+    const content = value.slice(0, width);
     return {
       content,
       ellipsis: '',
+      ranges: clipRanges(ranges, 0, content.length, 0),
       text: content
     };
   }
 
-  const content = chars.slice(0, width - 3).join('');
+  const firstMatchStart = ranges.length > 0 ? ranges[0][0] : null;
+  const snippetStart = firstMatchStart === null
+    ? 0
+    : startAroundMatch(value, firstMatchStart, PROMPT_WORDS_BEFORE_MATCH);
+  const prefix = snippetStart > 0 ? '... ' : '';
+  const availableWidth = Math.max(0, width - visibleLength(prefix) - 3);
+  const body = value.slice(snippetStart, snippetStart + availableWidth);
+  const content = `${prefix}${body}`;
+  const ellipsis = snippetStart + body.length < value.length ? '...' : '';
+
   return {
     content,
-    ellipsis: '...',
-    text: `${content}...`
+    ellipsis,
+    ranges: clipRanges(ranges, snippetStart, snippetStart + body.length, visibleLength(prefix)),
+    text: `${content}${ellipsis}`
   };
+}
+
+function startAroundMatch(value, matchStart, wordsBefore) {
+  const words = wordRanges(value);
+  const matchWordIndex = words.findIndex((word) => matchStart >= word.start && matchStart < word.end);
+
+  if (matchWordIndex < 0 || matchWordIndex <= wordsBefore) {
+    return 0;
+  }
+
+  return words[matchWordIndex - wordsBefore].start;
+}
+
+function clipRanges(ranges, start, end, offset) {
+  return ranges
+    .map(([rangeStart, rangeEnd]) => [
+      Math.max(rangeStart, start) - start + offset,
+      Math.min(rangeEnd + 1, end) - start + offset - 1
+    ])
+    .filter(([rangeStart, rangeEnd]) => rangeStart <= rangeEnd);
 }
 
 function applyHighlights(value, ranges) {
