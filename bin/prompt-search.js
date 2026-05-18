@@ -9,7 +9,7 @@ const { spawnSync } = require('child_process');
 const Fuse = require('fuse.js');
 
 const DEFAULT_LIMIT = 200;
-const PROMPT_WORDS_BEFORE_MATCH = 4;
+const SNIPPET_ELLIPSIS = '...';
 const RESULT_ROW_HEIGHT = 2;
 const TABS = ['all', 'sessions', 'history'];
 const FUSE_OPTIONS = {
@@ -849,33 +849,123 @@ function snippetForHighlight(value, ranges, width) {
     };
   }
 
-  const firstMatchStart = ranges.length > 0 ? ranges[0][0] : null;
-  const snippetStart = firstMatchStart === null
-    ? 0
-    : startAroundMatch(value, firstMatchStart, PROMPT_WORDS_BEFORE_MATCH);
-  const prefix = snippetStart > 0 ? '... ' : '';
-  const availableWidth = Math.max(0, width - visibleLength(prefix) - 3);
-  const body = value.slice(snippetStart, snippetStart + availableWidth);
+  const window = ranges.length > 0
+    ? bestSnippetWindow(value, ranges[0], width)
+    : snippetWindowFromStart(value.length, width, 0);
+  const prefix = window.start > 0 ? SNIPPET_ELLIPSIS : '';
+  const body = value.slice(window.start, window.end);
   const content = `${prefix}${body}`;
-  const ellipsis = snippetStart + body.length < value.length ? '...' : '';
+  const ellipsis = window.end < value.length ? SNIPPET_ELLIPSIS : '';
 
   return {
     content,
     ellipsis,
-    ranges: clipRanges(ranges, snippetStart, snippetStart + body.length, visibleLength(prefix)),
+    ranges: clipRanges(ranges, window.start, window.end, visibleLength(prefix)),
     text: `${content}${ellipsis}`
   };
 }
 
-function startAroundMatch(value, matchStart, wordsBefore) {
-  const words = wordRanges(value);
-  const matchWordIndex = words.findIndex((word) => matchStart >= word.start && matchStart < word.end);
+function bestSnippetWindow(value, matchRange, width) {
+  const length = value.length;
+  const leadingEllipsisWidth = visibleLength(SNIPPET_ELLIPSIS);
+  const trailingEllipsisWidth = visibleLength(SNIPPET_ELLIPSIS);
+  const bodyWidthWithBothEllipses = Math.max(1, width - leadingEllipsisWidth - trailingEllipsisWidth);
+  const matchCenter = (matchRange[0] + matchRange[1] + 1) / 2;
+  const centeredStarts = [
+    Math.floor(matchCenter - bodyWidthWithBothEllipses / 2),
+    matchRange[0] - Math.floor(bodyWidthWithBothEllipses / 2),
+    matchRange[1] - bodyWidthWithBothEllipses + 1
+  ];
+  const requestedStarts = [
+    0,
+    snapSnippetStartForward(value, length - (width - leadingEllipsisWidth), matchRange[0]),
+    ...centeredStarts.map((start) => snapSnippetStart(value, start, matchRange[0]))
+  ];
+  const candidates = requestedStarts
+    .map((start) => snippetWindowFromStart(length, width, start))
+    .filter((window) => window.start <= matchRange[0] && window.end > matchRange[1]);
 
-  if (matchWordIndex < 0 || matchWordIndex <= wordsBefore) {
+  if (candidates.length === 0) {
+    return snippetWindowFromStart(length, width, matchRange[0]);
+  }
+
+  candidates.sort((left, right) => {
+    const hiddenDifference = hiddenCharacters(left, length) - hiddenCharacters(right, length);
+    if (hiddenDifference !== 0) {
+      return hiddenDifference;
+    }
+
+    const blankDifference = blankCharacters(left, width, length) - blankCharacters(right, width, length);
+    if (blankDifference !== 0) {
+      return blankDifference;
+    }
+
+    const rightHiddenDifference = rightHiddenCharacters(left, length) - rightHiddenCharacters(right, length);
+    if (rightHiddenDifference !== 0) {
+      return rightHiddenDifference;
+    }
+
+    return matchCenterDistance(left, matchRange, width) - matchCenterDistance(right, matchRange, width);
+  });
+
+  return candidates[0];
+}
+
+function snapSnippetStart(value, requestedStart, maxStart) {
+  if (requestedStart <= 0) {
     return 0;
   }
 
-  return words[matchWordIndex - wordsBefore].start;
+  const words = wordRanges(value);
+  const containingWord = words.find((word) => requestedStart > word.start && requestedStart < word.end);
+  if (containingWord && containingWord.start <= maxStart) {
+    return containingWord.start;
+  }
+
+  const nextWord = words.find((word) => word.start >= requestedStart && word.start <= maxStart);
+  return nextWord ? nextWord.start : requestedStart;
+}
+
+function snapSnippetStartForward(value, requestedStart, maxStart) {
+  if (requestedStart <= 0) {
+    return 0;
+  }
+
+  const nextWord = wordRanges(value).find((word) => word.start >= requestedStart && word.start <= maxStart);
+  return nextWord ? nextWord.start : requestedStart;
+}
+
+function snippetWindowFromStart(length, width, requestedStart) {
+  const start = Math.max(0, Math.min(length, requestedStart));
+  const prefixWidth = start > 0 ? visibleLength(SNIPPET_ELLIPSIS) : 0;
+  const suffixNeeded = start + Math.max(0, width - prefixWidth) < length;
+  const suffixWidth = suffixNeeded ? visibleLength(SNIPPET_ELLIPSIS) : 0;
+  const bodyWidth = Math.max(0, width - prefixWidth - suffixWidth);
+  const end = Math.min(length, start + bodyWidth);
+
+  return { start, end };
+}
+
+function hiddenCharacters(window, length) {
+  return window.start + Math.max(0, length - window.end);
+}
+
+function rightHiddenCharacters(window, length) {
+  return Math.max(0, length - window.end);
+}
+
+function blankCharacters(window, width, length) {
+  const prefixWidth = window.start > 0 ? visibleLength(SNIPPET_ELLIPSIS) : 0;
+  const suffixWidth = window.end < length ? visibleLength(SNIPPET_ELLIPSIS) : 0;
+  const bodyWidth = Math.max(0, window.end - window.start);
+  const renderedWidth = prefixWidth + bodyWidth + suffixWidth;
+  return Math.max(0, width - renderedWidth);
+}
+
+function matchCenterDistance(window, matchRange, width) {
+  const prefixWidth = window.start > 0 ? visibleLength(SNIPPET_ELLIPSIS) : 0;
+  const renderedMatchCenter = prefixWidth + ((matchRange[0] - window.start) + (matchRange[1] - window.start + 1)) / 2;
+  return Math.abs(renderedMatchCenter - width / 2);
 }
 
 function clipRanges(ranges, start, end, offset) {

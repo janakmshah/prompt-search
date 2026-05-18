@@ -17,7 +17,7 @@ Long-running Copilot CLI workflows often contain prompts worth reusing: PR revie
 | Feature | What it gives you |
 | --- | --- |
 | Typo-tolerant fuzzy search | Uses Fuse.js to find prompts from fragments, approximate wording, and common typos. |
-| Match highlighting | Highlights matched text in bold and centers long prompt rows around the first match. |
+| Match highlighting | Highlights matched text in bold and windows long prompt rows to minimize hidden text and blank space. |
 | Session-aware results | See the session summary, branch, source, and relative age beside each match. |
 | Interactive picker | Navigate results in a compact terminal UI with tabs and keyboard shortcuts. |
 | Clipboard handoff | Press Enter to copy the selected prompt and print it for visibility. |
