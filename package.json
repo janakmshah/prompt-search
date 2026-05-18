@@ -21,6 +21,7 @@
   },
   "files": [
     "bin",
+    "scripts",
     "README.md",
     "LICENSE"
   ],
@@ -29,9 +30,12 @@
   },
   "scripts": {
     "check": "node --check ./bin/prompt-search.js",
-    "test": "npm run check && node ./bin/prompt-search.js --print --limit 1 >/dev/null"
+    "test": "npm run check && node ./scripts/smoke-test.js"
   },
   "engines": {
     "node": ">=18"
+  },
+  "dependencies": {
+    "fuse.js": "^7.3.0"
   }
 }

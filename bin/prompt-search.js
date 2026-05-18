@@ -6,9 +6,24 @@ const os = require('os');
 const path = require('path');
 const readline = require('readline');
 const { spawnSync } = require('child_process');
+const Fuse = require('fuse.js');
 
 const DEFAULT_LIMIT = 200;
 const TABS = ['all', 'sessions', 'history'];
+const FUSE_OPTIONS = {
+  includeScore: true,
+  ignoreDiacritics: true,
+  ignoreLocation: true,
+  minMatchCharLength: 2,
+  threshold: 0.45,
+  keys: [
+    { name: 'prompt', weight: 0.78 },
+    { name: 'sessionSummary', weight: 0.12 },
+    { name: 'branch', weight: 0.05 },
+    { name: 'repository', weight: 0.03 },
+    { name: 'cwd', weight: 0.02 }
+  ]
+};
 const ANSI = {
   reset: '\x1b[0m',
   bold: '\x1b[1m',
@@ -266,32 +281,39 @@ function stablePromptKey(prompt) {
 
 function searchItems(items, query, tab, limit) {
   const filtered = items.filter((item) => tab === 'all' || item.sourceKind === tab);
-  const scored = filtered
-    .map((item) => ({
-      item,
-      score: scoreItem(item, query)
-    }))
-    .filter(({ score }) => query.trim().length === 0 || score > 0);
+  const normalizedQuery = normalizeText(query).trim();
 
-  scored.sort((a, b) => {
-    if (query.trim().length > 0 && b.score !== a.score) {
-      return b.score - a.score;
-    }
-    return sortTime(b.item) - sortTime(a.item);
-  });
+  if (!normalizedQuery) {
+    const recent = filtered.slice().sort((a, b) => sortTime(b) - sortTime(a));
+
+    return {
+      results: recent.slice(0, limit),
+      total: recent.length
+    };
+  }
+
+  const fuse = new Fuse(filtered, FUSE_OPTIONS);
+  const ranked = fuse.search(query.trim())
+    .map((result) => ({
+      item: result.item,
+      score: rankedFuseScore(result, normalizedQuery)
+    }))
+    .sort((a, b) => {
+      if (a.score !== b.score) {
+        return a.score - b.score;
+      }
+      return sortTime(b.item) - sortTime(a.item);
+    });
 
   return {
-    results: scored.slice(0, limit).map(({ item }) => item),
-    total: scored.length
+    results: ranked.slice(0, limit).map(({ item }) => item),
+    total: ranked.length
   };
 }
 
-function scoreItem(item, query) {
-  const normalizedQuery = normalizeText(query);
-  if (!normalizedQuery) {
-    return recencyBoost(item);
-  }
-
+function rankedFuseScore(result, normalizedQuery) {
+  const item = result.item;
+  let score = typeof result.score === 'number' ? result.score : 1;
   const promptText = normalizeText(item.prompt);
   const metadataText = normalizeText([
     item.sessionSummary,
@@ -299,80 +321,22 @@ function scoreItem(item, query) {
     item.repository,
     item.cwd
   ].filter(Boolean).join(' '));
-
-  let score = 0;
   const tokens = normalizedQuery.split(/\s+/).filter(Boolean);
-
-  for (const token of tokens) {
-    const promptScore = tokenScore(token, promptText);
-    const metadataScore = tokenScore(token, metadataText) * 0.35;
-    const best = Math.max(promptScore, metadataScore);
-
-    if (best <= 0) {
-      return 0;
-    }
-
-    score += best;
-  }
+  const promptTokenMatches = tokens.filter((token) => promptText.includes(token)).length;
+  const metadataTokenMatches = tokens.filter((token) => metadataText.includes(token)).length;
 
   if (promptText.includes(normalizedQuery)) {
-    score += 1000 + normalizedQuery.length * 5;
-  } else {
-    score += orderedFuzzyScore(normalizedQuery, promptText);
+    score -= 0.5;
   }
 
-  return score + recencyBoost(item);
-}
-
-function tokenScore(token, haystack) {
-  if (!haystack) {
-    return 0;
+  if (tokens.length > 0 && promptTokenMatches === tokens.length) {
+    score -= 0.3;
   }
 
-  const exactIndex = haystack.indexOf(token);
-  if (exactIndex >= 0) {
-    return 250 + token.length * 8 + Math.max(0, 50 - exactIndex * 0.1);
-  }
-
-  return orderedFuzzyScore(token, haystack);
-}
-
-function orderedFuzzyScore(needle, haystack) {
-  if (!needle) {
-    return 0;
-  }
-
-  let previous = -1;
-  let first = -1;
-  let last = -1;
-  let gaps = 0;
-  let consecutive = 0;
-
-  for (const char of needle) {
-    const index = haystack.indexOf(char, previous + 1);
-
-    if (index < 0) {
-      return 0;
-    }
-
-    if (first < 0) {
-      first = index;
-    }
-
-    if (previous >= 0) {
-      if (index === previous + 1) {
-        consecutive += 1;
-      } else {
-        gaps += index - previous - 1;
-      }
-    }
-
-    previous = index;
-    last = index;
-  }
-
-  const span = last - first + 1;
-  return Math.max(1, 90 + needle.length * 5 + consecutive * 8 - gaps * 0.5 - span * 0.15);
+  score -= promptTokenMatches * 0.04;
+  score -= metadataTokenMatches * 0.01;
+  score -= recencyBoost(item) / 1000;
+  return score;
 }
 
 function recencyBoost(item) {

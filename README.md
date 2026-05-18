@@ -16,13 +16,13 @@ Long-running Copilot CLI workflows often contain prompts worth reusing: PR revie
 
 | Feature | What it gives you |
 | --- | --- |
-| Fuzzy prompt search | Find prompts even when you only remember fragments or approximate wording. |
+| Typo-tolerant fuzzy search | Uses Fuse.js to find prompts from fragments, approximate wording, and common typos. |
 | Session-aware results | See the session summary, branch, source, and relative age beside each match. |
 | Interactive picker | Navigate results in a compact terminal UI with tabs and keyboard shortcuts. |
 | Clipboard handoff | Press Enter to copy the selected prompt and print it for visibility. |
 | Scriptable output | Use `--print` or `--json` for shell scripts, aliases, and automation. |
 | Local-first privacy | Reads from `~/.copilot` and does not call any network service. |
-| Zero npm dependencies | Uses Node.js built-ins plus the system `sqlite3` command. |
+| Small dependency footprint | Uses Fuse.js for matching, Node.js built-ins for the CLI, and the system `sqlite3` command for session data. |
 
 ## Demo
 
@@ -46,8 +46,9 @@ Search: rubber duck
 
 | Requirement | Notes |
 | --- | --- |
-| Node.js 18 or newer | The CLI is a single dependency-free Node executable. |
+| Node.js 18 or newer | Required to run the CLI. |
 | `sqlite3` | Used to read `~/.copilot/session-store.db`. Installed by default on many macOS setups. |
+| npm dependencies | Run `npm install` after cloning to install Fuse.js. |
 | Clipboard command | macOS uses `pbcopy`; Linux attempts `wl-copy`, `xclip`, then `xsel`. |
 | Copilot CLI history | The tool searches `~/.copilot/session-store.db` and `~/.copilot/command-history-state.json`. |
 
@@ -58,6 +59,7 @@ Clone the repository and link the command into your PATH:
 ```sh
 git clone https://github.com/janakmshah/prompt-search.git
 cd prompt-search
+npm install
 npm link
 ```
 
@@ -150,14 +152,15 @@ Prompts are deduplicated by normalized prompt text. Session-store prompts are pr
 
 ## How ranking works
 
-The ranking is intentionally simple and explainable:
+Search uses Fuse.js for typo-tolerant fuzzy matching, with a small amount of deterministic post-ranking:
 
-1. Exact substring matches score highest.
-2. Token matches across the prompt score higher than metadata-only matches.
-3. Ordered fuzzy matches are included when all query characters appear in order.
-4. Recent prompts receive a small boost.
+1. Prompt text is weighted higher than session metadata.
+2. Exact phrase matches in prompt text receive the strongest boost.
+3. Prompts containing all query tokens are ranked above looser fuzzy matches.
+4. Metadata matches can still surface relevant sessions when the prompt text is approximate.
+5. Recent prompts receive a small tie-breaker boost.
 
-This keeps results predictable while still handling approximate searches.
+This keeps exact and token-based matches predictable while improving typo tolerance for searches such as `rupper duck` matching `rubber duck`.
 
 ## Privacy and security
 
@@ -177,6 +180,7 @@ Your Copilot history can contain sensitive information. Treat terminal output, J
 Install or link locally:
 
 ```sh
+npm install
 npm link
 ```
 
@@ -204,6 +208,9 @@ node ./bin/prompt-search.js --print --limit 3 "fast path"
 .
 ├── bin/
 │   └── prompt-search.js   # CLI entrypoint and interactive picker
+├── scripts/
+│   └── smoke-test.js      # Search behavior smoke tests
+├── package-lock.json      # Locked npm dependency graph
 ├── package.json           # npm metadata, bin mapping, scripts
 ├── README.md              # User and contributor documentation
 └── LICENSE                # MIT license
