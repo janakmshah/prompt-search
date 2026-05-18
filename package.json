@@ -36,6 +36,7 @@
     "node": ">=18"
   },
   "dependencies": {
-    "fuse.js": "^7.3.0"
+    "fuse.js": "^7.3.0",
+    "string-width": "^4.2.3"
   }
 }

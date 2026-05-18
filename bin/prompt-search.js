@@ -7,6 +7,7 @@ const path = require('path');
 const readline = require('readline');
 const { spawnSync } = require('child_process');
 const Fuse = require('fuse.js');
+const stringWidth = require('string-width');
 
 const DEFAULT_LIMIT = 200;
 const SNIPPET_ELLIPSIS = '...';
@@ -764,7 +765,7 @@ function renderTableHeader(cols) {
 function renderRow(item, index, selected, cols) {
   const widths = tableWidths(cols);
   const marker = selected ? '>' : ' ';
-  const promptStyle = selected ? ANSI.cyan : ANSI.dim;
+  const promptStyle = selected ? ANSI.cyan : '';
   const metadataStyle = ANSI.gray;
   const promptLine = [
     styledCell(marker, 1),
@@ -853,7 +854,7 @@ function snippetForHighlight(value, ranges, width) {
 
   const window = ranges.length > 0
     ? bestSnippetWindow(value, ranges[0], width)
-    : snippetWindowFromStart(value.length, width, 0);
+    : snippetWindowFromStart(value, width, 0);
   const prefix = window.start > 0 ? SNIPPET_ELLIPSIS : '';
   const body = value.slice(window.start, window.end);
   const content = `${prefix}${body}`;
@@ -884,11 +885,11 @@ function bestSnippetWindow(value, matchRange, width) {
     ...centeredStarts.map((start) => snapSnippetStart(value, start, matchRange[0]))
   ];
   const candidates = requestedStarts
-    .map((start) => snippetWindowFromStart(length, width, start))
+    .map((start) => snippetWindowFromStart(value, width, start))
     .filter((window) => window.start <= matchRange[0] && window.end > matchRange[1]);
 
   if (candidates.length === 0) {
-    return snippetWindowFromStart(length, width, matchRange[0]);
+    return snippetWindowFromStart(value, width, matchRange[0]);
   }
 
   candidates.sort((left, right) => {
@@ -937,15 +938,17 @@ function snapSnippetStartForward(value, requestedStart, maxStart) {
   return nextWord ? nextWord.start : requestedStart;
 }
 
-function snippetWindowFromStart(length, width, requestedStart) {
+function snippetWindowFromStart(value, width, requestedStart) {
+  const length = value.length;
   const start = Math.max(0, Math.min(length, requestedStart));
   const prefixWidth = start > 0 ? visibleLength(SNIPPET_ELLIPSIS) : 0;
   const suffixNeeded = start + Math.max(0, width - prefixWidth) < length;
   const suffixWidth = suffixNeeded ? visibleLength(SNIPPET_ELLIPSIS) : 0;
   const bodyWidth = Math.max(0, width - prefixWidth - suffixWidth);
-  const end = Math.min(length, start + bodyWidth);
+  const body = sliceToWidth(value, start, bodyWidth);
+  const end = body.end;
 
-  return { start, end };
+  return { start, end, width: body.width };
 }
 
 function hiddenCharacters(window, length) {
@@ -959,7 +962,7 @@ function rightHiddenCharacters(window, length) {
 function blankCharacters(window, width, length) {
   const prefixWidth = window.start > 0 ? visibleLength(SNIPPET_ELLIPSIS) : 0;
   const suffixWidth = window.end < length ? visibleLength(SNIPPET_ELLIPSIS) : 0;
-  const bodyWidth = Math.max(0, window.end - window.start);
+  const bodyWidth = window.width || Math.max(0, window.end - window.start);
   const renderedWidth = prefixWidth + bodyWidth + suffixWidth;
   return Math.max(0, width - renderedWidth);
 }
@@ -1004,18 +1007,39 @@ function applyHighlights(value, ranges, baseStyle) {
 }
 
 function truncate(value, width) {
-  const chars = Array.from(value);
-  if (chars.length <= width) {
+  if (visibleLength(value) <= width) {
     return value;
   }
   if (width <= 3) {
-    return chars.slice(0, width).join('');
+    return sliceToWidth(value, 0, width).text;
   }
-  return `${chars.slice(0, width - 3).join('')}...`;
+  return `${sliceToWidth(value, 0, width - 3).text}...`;
 }
 
 function visibleLength(value) {
-  return Array.from(value).length;
+  return stringWidth(String(value || ''));
+}
+
+function sliceToWidth(value, start, width) {
+  let output = '';
+  let used = 0;
+
+  for (let index = start; index < value.length;) {
+    const codePoint = value.codePointAt(index);
+    const char = String.fromCodePoint(codePoint);
+    const charLength = char.length;
+    const charWidth = visibleLength(char);
+
+    if (used + charWidth > width) {
+      return { text: output, end: index, width: used };
+    }
+
+    output += char;
+    used += charWidth;
+    index += charLength;
+  }
+
+  return { text: output, end: value.length, width: used };
 }
 
 function oneLine(value) {
