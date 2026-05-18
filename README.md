@@ -1,14 +1,14 @@
 # prompt-search
 
-> A fast, local, keyboard-first CLI for finding and reusing old GitHub Copilot CLI prompts.
+> A local CLI for searching and reusing old GitHub Copilot CLI prompts.
 
-`prompt-search` gives your Copilot prompt history the interface it deserves: fuzzy search, session metadata, a terminal picker inspired by `/reuse`, and one-keystroke copying back to your clipboard.
+`prompt-search` reads your local Copilot CLI history and provides fuzzy search, session metadata, an interactive terminal picker, and clipboard handoff for selected prompts.
 
 It reads local files only. Your prompts never leave your machine.
 
 ## Why this exists
 
-Long-running Copilot CLI workflows often contain valuable prompts: PR review instructions, branch choreography, debugging context, one-off agent prompts, and carefully worded constraints. Those prompts are useful again later, but they are hard to rediscover once they are buried across sessions.
+Long-running Copilot CLI workflows often contain prompts worth reusing: PR review instructions, branch choreography, debugging context, one-off agent prompts, and carefully worded constraints. Those prompts are useful later, but difficult to find once they are spread across sessions.
 
 `prompt-search` indexes the local Copilot data you already have and makes old prompts searchable from any terminal.
 
@@ -18,7 +18,7 @@ Long-running Copilot CLI workflows often contain valuable prompts: PR review ins
 | --- | --- |
 | Fuzzy prompt search | Find prompts even when you only remember fragments or approximate wording. |
 | Session-aware results | See the session summary, branch, source, and relative age beside each match. |
-| `/reuse`-style picker | Navigate results in a compact terminal UI with tabs and keyboard shortcuts. |
+| Interactive picker | Navigate results in a compact terminal UI with tabs and keyboard shortcuts. |
 | Clipboard handoff | Press Enter to copy the selected prompt and print it for visibility. |
 | Scriptable output | Use `--print` or `--json` for shell scripts, aliases, and automation. |
 | Local-first privacy | Reads from `~/.copilot` and does not call any network service. |
@@ -165,7 +165,7 @@ This keeps results predictable while still handling approximate searches.
 
 | Guarantee | Detail |
 | --- | --- |
-| No network calls | The CLI does not fetch, upload, sync, or phone home. |
+| No network calls | The CLI does not fetch, upload, or sync prompt data. |
 | No indexing service | Results are computed in-process each time you run the command. |
 | No prompt copies on disk | The tool reads existing Copilot files and does not create a prompt cache. |
 | Explicit clipboard behavior | Only the selected prompt is copied, and only when you press Enter unless `--no-copy` is used. |
