@@ -17,6 +17,7 @@ Long-running Copilot CLI workflows often contain prompts worth reusing: PR revie
 | Feature | What it gives you |
 | --- | --- |
 | Typo-tolerant fuzzy search | Uses Fuse.js to find prompts from fragments, approximate wording, and common typos. |
+| Match highlighting | Highlights matched text in the interactive results table. |
 | Session-aware results | See the session summary, branch, source, and relative age beside each match. |
 | Interactive picker | Navigate results in a compact terminal UI with tabs and keyboard shortcuts. |
 | Clipboard handoff | Press Enter to copy the selected prompt and print it for visibility. |
@@ -258,7 +259,6 @@ Ideas that would fit the project:
 | --- | --- |
 | Open selected session metadata | Print session ID, cwd, branch, and turn index in a copyable form. |
 | Config file | Allow default tab, limit, and copy behavior to be configured. |
-| Highlight matched terms | Improve scanability in the interactive table. |
 | Export selected prompt | Save a selected prompt to a user-provided file path. |
 
 ## License

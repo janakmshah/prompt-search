@@ -11,23 +11,26 @@ const Fuse = require('fuse.js');
 const DEFAULT_LIMIT = 200;
 const TABS = ['all', 'sessions', 'history'];
 const FUSE_OPTIONS = {
+  includeMatches: true,
   includeScore: true,
   ignoreDiacritics: true,
   ignoreLocation: true,
   minMatchCharLength: 2,
   threshold: 0.45,
   keys: [
-    { name: 'prompt', weight: 0.78 },
-    { name: 'sessionSummary', weight: 0.12 },
-    { name: 'branch', weight: 0.05 },
-    { name: 'repository', weight: 0.03 },
-    { name: 'cwd', weight: 0.02 }
+    { name: 'searchablePrompt', weight: 0.78 },
+    { name: 'searchableSessionSummary', weight: 0.12 },
+    { name: 'searchableBranch', weight: 0.05 },
+    { name: 'searchableRepository', weight: 0.03 },
+    { name: 'searchableCwd', weight: 0.02 }
   ]
 };
 const ANSI = {
   reset: '\x1b[0m',
   bold: '\x1b[1m',
   dim: '\x1b[2m',
+  inverse: '\x1b[7m',
+  noInverse: '\x1b[27m',
   cyan: '\x1b[36m',
   black: '\x1b[30m',
   bgCyan: '\x1b[46m',
@@ -292,10 +295,10 @@ function searchItems(items, query, tab, limit) {
     };
   }
 
-  const fuse = new Fuse(filtered, FUSE_OPTIONS);
+  const fuse = new Fuse(filtered.map(toSearchableItem), FUSE_OPTIONS);
   const ranked = fuse.search(query.trim())
     .map((result) => ({
-      item: result.item,
+      item: withMatchRanges(result.item, result.matches, normalizedQuery),
       score: rankedFuseScore(result, normalizedQuery)
     }))
     .sort((a, b) => {
@@ -311,15 +314,189 @@ function searchItems(items, query, tab, limit) {
   };
 }
 
+function toSearchableItem(item) {
+  return {
+    ...item,
+    searchablePrompt: oneLine(item.prompt),
+    searchableSessionSummary: oneLine(item.sessionSummary || item.sessionId || item.source),
+    searchableBranch: oneLine(item.branch),
+    searchableRepository: oneLine(item.repository),
+    searchableCwd: oneLine(item.cwd)
+  };
+}
+
+function withMatchRanges(item, matches, normalizedQuery) {
+  const promptFallbackRanges = rangesForKey(matches, 'searchablePrompt');
+  const sessionFallbackRanges = rangesForKey(matches, 'searchableSessionSummary');
+
+  return {
+    ...item,
+    matchRanges: {
+      prompt: highlightRangesForText(item.searchablePrompt, normalizedQuery, promptFallbackRanges),
+      sessionSummary: highlightRangesForText(
+        item.searchableSessionSummary,
+        normalizedQuery,
+        sessionFallbackRanges
+      )
+    }
+  };
+}
+
+function highlightRangesForText(text, normalizedQuery, fallbackRanges) {
+  const ranges = [];
+
+  for (const token of queryTokens(normalizedQuery)) {
+    const exactRanges = exactTokenRanges(text, token);
+    if (exactRanges.length > 0) {
+      ranges.push(...exactRanges);
+      continue;
+    }
+
+    const approximateRange = approximateTokenRange(text, token);
+    if (approximateRange) {
+      ranges.push(approximateRange);
+    }
+  }
+
+  return ranges.length > 0 ? mergeRanges(ranges) : fallbackRanges;
+}
+
+function queryTokens(normalizedQuery) {
+  return normalizedQuery
+    .split(/\s+/)
+    .map((token) => token.replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, ''))
+    .filter(Boolean);
+}
+
+function exactTokenRanges(text, normalizedToken) {
+  const normalizedText = normalizeText(text);
+  const ranges = [];
+  let cursor = normalizedText.indexOf(normalizedToken);
+
+  while (cursor >= 0) {
+    ranges.push([cursor, cursor + normalizedToken.length - 1]);
+    cursor = normalizedText.indexOf(normalizedToken, cursor + normalizedToken.length);
+  }
+
+  return ranges;
+}
+
+function approximateTokenRange(text, normalizedToken) {
+  if (normalizedToken.length < 3) {
+    return null;
+  }
+
+  const maxDistance = maxTypoDistance(normalizedToken);
+  let best = null;
+
+  for (const word of wordRanges(text)) {
+    const normalizedWord = normalizeText(word.value);
+    if (!normalizedWord || Math.abs(normalizedWord.length - normalizedToken.length) > maxDistance) {
+      continue;
+    }
+
+    const distance = levenshteinDistance(normalizedWord, normalizedToken, maxDistance);
+    if (distance <= maxDistance && (!best || distance < best.distance)) {
+      best = {
+        distance,
+        range: [word.start, word.end - 1]
+      };
+    }
+  }
+
+  return best ? best.range : null;
+}
+
+function maxTypoDistance(token) {
+  return Math.max(1, Math.floor(token.length * 0.34));
+}
+
+function wordRanges(text) {
+  const ranges = [];
+  const matcher = /[A-Za-z0-9]+/g;
+  let match = matcher.exec(text);
+
+  while (match) {
+    ranges.push({
+      value: match[0],
+      start: match.index,
+      end: match.index + match[0].length
+    });
+    match = matcher.exec(text);
+  }
+
+  return ranges;
+}
+
+function levenshteinDistance(left, right, maxDistance) {
+  let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    const current = [leftIndex];
+    let rowMinimum = current[0];
+
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const substitutionCost = left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1;
+      const distance = Math.min(
+        previous[rightIndex] + 1,
+        current[rightIndex - 1] + 1,
+        previous[rightIndex - 1] + substitutionCost
+      );
+      current[rightIndex] = distance;
+      rowMinimum = Math.min(rowMinimum, distance);
+    }
+
+    if (rowMinimum > maxDistance) {
+      return maxDistance + 1;
+    }
+
+    previous = current;
+  }
+
+  return previous[right.length];
+}
+
+function rangesForKey(matches, key) {
+  if (!Array.isArray(matches)) {
+    return [];
+  }
+
+  const match = matches.find((candidate) => candidate.key === key);
+  return mergeRanges(match ? match.indices : []);
+}
+
+function mergeRanges(ranges) {
+  if (!Array.isArray(ranges) || ranges.length === 0) {
+    return [];
+  }
+
+  const sorted = ranges
+    .filter((range) => Array.isArray(range) && range.length === 2)
+    .map(([start, end]) => [Math.max(0, start), Math.max(0, end)])
+    .sort((a, b) => a[0] - b[0]);
+
+  const merged = [];
+  for (const [start, end] of sorted) {
+    const previous = merged[merged.length - 1];
+    if (previous && start <= previous[1] + 1) {
+      previous[1] = Math.max(previous[1], end);
+    } else {
+      merged.push([start, end]);
+    }
+  }
+
+  return merged;
+}
+
 function rankedFuseScore(result, normalizedQuery) {
   const item = result.item;
   let score = typeof result.score === 'number' ? result.score : 1;
-  const promptText = normalizeText(item.prompt);
+  const promptText = normalizeText(item.searchablePrompt);
   const metadataText = normalizeText([
-    item.sessionSummary,
-    item.branch,
-    item.repository,
-    item.cwd
+    item.searchableSessionSummary,
+    item.searchableBranch,
+    item.searchableRepository,
+    item.searchableCwd
   ].filter(Boolean).join(' '));
   const tokens = normalizedQuery.split(/\s+/).filter(Boolean);
   const promptTokenMatches = tokens.filter((token) => promptText.includes(token)).length;
@@ -588,19 +765,25 @@ function renderTableHeader(cols) {
 function renderRow(item, index, selected, cols) {
   const widths = tableWidths(cols);
   const marker = selected ? '>' : ' ';
-  const line = [
-    marker,
-    padEnd(`${index + 1}.`, widths.number),
-    padEnd(oneLine(item.prompt), widths.prompt),
-    padEnd(oneLine(item.sessionSummary || item.sessionId || item.source), widths.session),
-    padEnd(item.source, widths.type),
-    padEnd(timeAgo(item.timestamp, item.rank), widths.when)
-  ].join(' ');
+  const baseStyle = selected ? ANSI.cyan : ANSI.dim;
+  const cells = [
+    styledCell(marker, 1),
+    styledCell(`${index + 1}.`, widths.number),
+    highlightedCell(
+      oneLine(item.prompt),
+      item.matchRanges ? item.matchRanges.prompt : [],
+      widths.prompt
+    ),
+    highlightedCell(
+      oneLine(item.sessionSummary || item.sessionId || item.source),
+      item.matchRanges ? item.matchRanges.sessionSummary : [],
+      widths.session
+    ),
+    styledCell(item.source, widths.type),
+    styledCell(timeAgo(item.timestamp, item.rank), widths.when)
+  ];
 
-  if (selected) {
-    return `${ANSI.cyan}${line}${ANSI.reset}\n`;
-  }
-  return `${ANSI.dim}${line}${ANSI.reset}\n`;
+  return `${baseStyle}${cells.join(' ')}${ANSI.reset}\n`;
 }
 
 function tableWidths(cols) {
@@ -620,6 +803,68 @@ function tableWidths(cols) {
 function padEnd(value, width) {
   const text = truncate(String(value || ''), width);
   return text + ' '.repeat(Math.max(0, width - visibleLength(text)));
+}
+
+function styledCell(value, width) {
+  return padEnd(value, width);
+}
+
+function highlightedCell(value, ranges, width) {
+  const truncated = truncateForHighlight(String(value || ''), width);
+  const highlighted = applyHighlights(truncated.content, ranges);
+  const padding = ' '.repeat(Math.max(0, width - visibleLength(truncated.text)));
+  return `${highlighted}${truncated.ellipsis}${padding}`;
+}
+
+function truncateForHighlight(value, width) {
+  const chars = Array.from(value);
+  if (chars.length <= width) {
+    return {
+      content: value,
+      ellipsis: '',
+      text: value
+    };
+  }
+
+  if (width <= 3) {
+    const content = chars.slice(0, width).join('');
+    return {
+      content,
+      ellipsis: '',
+      text: content
+    };
+  }
+
+  const content = chars.slice(0, width - 3).join('');
+  return {
+    content,
+    ellipsis: '...',
+    text: `${content}...`
+  };
+}
+
+function applyHighlights(value, ranges) {
+  const clipped = ranges
+    .map(([start, end]) => [Math.max(0, start), Math.min(value.length - 1, end)])
+    .filter(([start, end]) => start <= end);
+
+  if (clipped.length === 0) {
+    return value;
+  }
+
+  let cursor = 0;
+  let output = '';
+
+  for (const [start, end] of clipped) {
+    if (cursor < start) {
+      output += value.slice(cursor, start);
+    }
+
+    output += `${ANSI.inverse}${value.slice(start, end + 1)}${ANSI.noInverse}`;
+    cursor = end + 1;
+  }
+
+  return output + value.slice(cursor);
 }
 
 function truncate(value, width) {
