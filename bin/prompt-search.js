@@ -32,6 +32,7 @@ const ANSI = {
   bold: '\x1b[1m',
   noBold: '\x1b[22m',
   dim: '\x1b[2m',
+  gray: '\x1b[90m',
   cyan: '\x1b[36m',
   black: '\x1b[30m',
   bgCyan: '\x1b[46m',
@@ -763,7 +764,8 @@ function renderTableHeader(cols) {
 function renderRow(item, index, selected, cols) {
   const widths = tableWidths(cols);
   const marker = selected ? '>' : ' ';
-  const baseStyle = selected ? ANSI.cyan : ANSI.dim;
+  const promptStyle = selected ? ANSI.cyan : ANSI.dim;
+  const metadataStyle = ANSI.gray;
   const promptLine = [
     styledCell(marker, 1),
     styledCell(`${index + 1}.`, widths.number),
@@ -771,12 +773,12 @@ function renderRow(item, index, selected, cols) {
       oneLine(item.prompt),
       item.matchRanges ? item.matchRanges.prompt : [],
       widths.prompt,
-      baseStyle
+      promptStyle
     )
   ].join(' ');
-  const metadataLine = renderMetadataLine(item, widths, baseStyle);
+  const metadataLine = renderMetadataLine(item, widths, metadataStyle);
 
-  return `${baseStyle}${promptLine}${ANSI.reset}\n${baseStyle}${metadataLine}${ANSI.reset}\n`;
+  return `${promptStyle}${promptLine}${ANSI.reset}\n${metadataStyle}${metadataLine}${ANSI.reset}\n`;
 }
 
 function tableWidths(cols) {
