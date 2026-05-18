@@ -1,0 +1,37 @@
+{
+  "name": "prompt-search",
+  "version": "0.1.0",
+  "description": "Local CLI picker for searching GitHub Copilot CLI prompt history.",
+  "license": "MIT",
+  "keywords": [
+    "cli",
+    "copilot",
+    "history",
+    "prompts",
+    "search",
+    "fuzzy-search"
+  ],
+  "homepage": "https://github.com/janakmshah/prompt-search#readme",
+  "bugs": {
+    "url": "https://github.com/janakmshah/prompt-search/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/janakmshah/prompt-search.git"
+  },
+  "files": [
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "prompt-search": "./bin/prompt-search.js"
+  },
+  "scripts": {
+    "check": "node --check ./bin/prompt-search.js",
+    "test": "npm run check && node ./bin/prompt-search.js --print --limit 1 >/dev/null"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
