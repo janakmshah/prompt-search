@@ -10,6 +10,7 @@ const Fuse = require('fuse.js');
 
 const DEFAULT_LIMIT = 200;
 const PROMPT_WORDS_BEFORE_MATCH = 4;
+const RESULT_ROW_HEIGHT = 2;
 const TABS = ['all', 'sessions', 'history'];
 const FUSE_OPTIONS = {
   includeMatches: true,
@@ -29,9 +30,8 @@ const FUSE_OPTIONS = {
 const ANSI = {
   reset: '\x1b[0m',
   bold: '\x1b[1m',
+  noBold: '\x1b[22m',
   dim: '\x1b[2m',
-  inverse: '\x1b[7m',
-  noInverse: '\x1b[27m',
   cyan: '\x1b[36m',
   black: '\x1b[30m',
   bgCyan: '\x1b[46m',
@@ -572,9 +572,12 @@ function runPicker(items, options) {
 
     const rows = process.stdout.rows || 24;
     const cols = process.stdout.columns || 120;
-    const headerLines = 7;
+    const headerLines = 8;
     const footerLines = 2;
-    const visibleRows = Math.max(1, rows - headerLines - footerLines);
+    const visibleRows = Math.max(
+      1,
+      Math.floor((rows - headerLines - footerLines) / RESULT_ROW_HEIGHT)
+    );
 
     if (state.selected < state.offset) {
       state.offset = state.selected;
@@ -754,45 +757,60 @@ function labelForTab(tab) {
 
 function renderTableHeader(cols) {
   const widths = tableWidths(cols);
-  return `${ANSI.dim}  ${padEnd('#', widths.number)} ${padEnd('Prompt', widths.prompt)} ${padEnd('Session', widths.session)} ${padEnd('Type', widths.type)} ${padEnd('When', widths.when)}${ANSI.reset}\n`;
+  return `${ANSI.dim}  ${padEnd('#', widths.number)} ${padEnd('Prompt', widths.prompt)}${ANSI.reset}\n`;
 }
 
 function renderRow(item, index, selected, cols) {
   const widths = tableWidths(cols);
   const marker = selected ? '>' : ' ';
   const baseStyle = selected ? ANSI.cyan : ANSI.dim;
-  const cells = [
+  const promptLine = [
     styledCell(marker, 1),
     styledCell(`${index + 1}.`, widths.number),
     highlightedCell(
       oneLine(item.prompt),
       item.matchRanges ? item.matchRanges.prompt : [],
-      widths.prompt
-    ),
-    highlightedCell(
-      oneLine(item.sessionSummary || item.sessionId || item.source),
-      item.matchRanges ? item.matchRanges.sessionSummary : [],
-      widths.session
-    ),
-    styledCell(item.source, widths.type),
-    styledCell(timeAgo(item.timestamp, item.rank), widths.when)
-  ];
+      widths.prompt,
+      baseStyle
+    )
+  ].join(' ');
+  const metadataLine = renderMetadataLine(item, widths, baseStyle);
 
-  return `${baseStyle}${cells.join(' ')}${ANSI.reset}\n`;
+  return `${baseStyle}${promptLine}${ANSI.reset}\n${baseStyle}${metadataLine}${ANSI.reset}\n`;
 }
 
 function tableWidths(cols) {
-  const fixed = 2 + 5 + 1 + 10 + 1 + 8 + 1 + 9;
-  const flexible = Math.max(30, cols - fixed);
-  const session = Math.max(16, Math.min(34, Math.floor(flexible * 0.28)));
-  const prompt = Math.max(20, flexible - session);
+  const number = 5;
+  const indent = 1 + 1 + number + 1;
+  const prompt = Math.max(20, cols - indent);
   return {
-    number: 5,
+    indent,
+    metadata: prompt,
+    number,
     prompt,
-    session,
-    type: 8,
-    when: 9
   };
+}
+
+function renderMetadataLine(item, widths, baseStyle) {
+  const session = oneLine(item.sessionSummary || item.sessionId || item.source);
+  const type = `Type: ${item.source}`;
+  const when = timeAgo(item.timestamp, item.rank);
+  const whenText = when ? `When: ${when}` : '';
+  const fixedWidth = visibleLength('Session: ') + visibleLength(type) + visibleLength(whenText) + 4;
+  const sessionWidth = Math.max(10, widths.metadata - fixedWidth);
+  const sessionText = highlightedCell(
+    session,
+    item.matchRanges ? item.matchRanges.sessionSummary : [],
+    sessionWidth,
+    baseStyle
+  );
+  const parts = [
+    `Session: ${sessionText}`,
+    type,
+    whenText
+  ].filter(Boolean);
+
+  return `${' '.repeat(widths.indent)}${parts.join('  ')}`;
 }
 
 function padEnd(value, width) {
@@ -804,9 +822,9 @@ function styledCell(value, width) {
   return padEnd(value, width);
 }
 
-function highlightedCell(value, ranges, width) {
+function highlightedCell(value, ranges, width, baseStyle = '') {
   const snippet = snippetForHighlight(String(value || ''), ranges, width);
-  const highlighted = applyHighlights(snippet.content, snippet.ranges);
+  const highlighted = applyHighlights(snippet.content, snippet.ranges, baseStyle);
   const padding = ' '.repeat(Math.max(0, width - visibleLength(snippet.text)));
   return `${highlighted}${snippet.ellipsis}${padding}`;
 }
@@ -869,7 +887,7 @@ function clipRanges(ranges, start, end, offset) {
     .filter(([rangeStart, rangeEnd]) => rangeStart <= rangeEnd);
 }
 
-function applyHighlights(value, ranges) {
+function applyHighlights(value, ranges, baseStyle) {
   const clipped = ranges
     .map(([start, end]) => [Math.max(0, start), Math.min(value.length - 1, end)])
     .filter(([start, end]) => start <= end);
@@ -886,7 +904,7 @@ function applyHighlights(value, ranges) {
       output += value.slice(cursor, start);
     }
 
-    output += `${ANSI.inverse}${value.slice(start, end + 1)}${ANSI.noInverse}`;
+    output += `${ANSI.bold}${value.slice(start, end + 1)}${ANSI.noBold}${baseStyle}`;
     cursor = end + 1;
   }
 

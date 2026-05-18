@@ -17,7 +17,7 @@ Long-running Copilot CLI workflows often contain prompts worth reusing: PR revie
 | Feature | What it gives you |
 | --- | --- |
 | Typo-tolerant fuzzy search | Uses Fuse.js to find prompts from fragments, approximate wording, and common typos. |
-| Match highlighting | Highlights matched text and centers long prompt rows around the first match. |
+| Match highlighting | Highlights matched text in bold and centers long prompt rows around the first match. |
 | Session-aware results | See the session summary, branch, source, and relative age beside each match. |
 | Interactive picker | Navigate results in a compact terminal UI with tabs and keyboard shortcuts. |
 | Clipboard handoff | Press Enter to copy the selected prompt and print it for visibility. |
@@ -35,10 +35,13 @@ Prompt Search:
 Search: rubber duck
 167 matches
 
-  #     Prompt                                      Session                 Type     When
-> 1.    rubber duck to ensure we haven't...         Review iOS Pull Request Session  2m ago
-  2.    rubber duck the late 4 commits...           Review iOS Pull Request Session  2h ago
-  3.    Rubber duck these changes                   Review Pull Request     Session  8h ago
+  #     Prompt
+> 1.    rubber duck to ensure we haven't...
+        Session: Review iOS Pull Request  Type: Session  When: 2m ago
+  2.    rubber duck the late 4 commits...
+        Session: Review iOS Pull Request  Type: Session  When: 2h ago
+  3.    Rubber duck these changes
+        Session: Review Pull Request      Type: Session  When: 8h ago
 
 / search | Up/Down navigate | Tab switch tabs | Enter copy+print | Ctrl+P print | Esc cancel
 ```
