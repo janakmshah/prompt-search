@@ -107,6 +107,19 @@ Search a different Copilot data directory:
 prompt-search --copilot-dir ~/backup/.copilot "merge conflicts"
 ```
 
+## Matching examples
+
+Search is intentionally forgiving. Use the words you remember, even if the phrase is incomplete or slightly wrong.
+
+| Query | Can match | Why |
+| --- | --- | --- |
+| `rubber duck` | `rubber blob duck` | Query terms do not need to be adjacent. |
+| `rupper duck` | `rubber duck` | Fuse.js handles common typos and near matches. |
+| `pruduct acton` | `product action` | Multiple misspelled terms can still match. |
+| `spin 4` | `spin up 4 review agents` | Short fragments can find longer prompts. |
+
+Exact phrase and full-token matches are still ranked higher than looser fuzzy matches when both are present.
+
 ## Interactive controls
 
 | Key | Action |
@@ -160,7 +173,7 @@ Search uses Fuse.js for typo-tolerant fuzzy matching, with a small amount of det
 4. Metadata matches can still surface relevant sessions when the prompt text is approximate.
 5. Recent prompts receive a small tie-breaker boost.
 
-This keeps exact and token-based matches predictable while improving typo tolerance for searches such as `rupper duck` matching `rubber duck`.
+The goal is predictable search, not aggressive semantic matching. The tool is best at finding prompts from remembered words, nearby spellings, and session metadata.
 
 ## Privacy and security
 
