@@ -24,7 +24,7 @@ Long-running Copilot CLI workflows often contain prompts worth reusing: PR revie
 | Clipboard handoff | Press Enter to copy the selected prompt and print it for visibility. |
 | Scriptable output | Use `--print` or `--json` for shell scripts, aliases, and automation. |
 | Local-first privacy | Reads from `~/.copilot` and does not call any network service. |
-| Small dependency footprint | Uses Fuse.js for matching, Node.js built-ins for the CLI, and the system `sqlite3` command for session data. |
+| Small dependency footprint | Uses Fuse.js for matching, string-width for terminal layout, Node.js built-ins for the CLI, and the system `sqlite3` command for session data. |
 
 ## Demo
 
@@ -53,7 +53,7 @@ Search: rubber duck
 | --- | --- |
 | Node.js 18 or newer | Required to run the CLI. |
 | `sqlite3` | Used to read `~/.copilot/session-store.db`. Installed by default on many macOS setups. |
-| npm dependencies | Run `npm install` after cloning to install Fuse.js. |
+| npm dependencies | Run `npm install` after cloning to install Fuse.js and string-width. |
 | Clipboard command | macOS uses `pbcopy`; Linux attempts `wl-copy`, `xclip`, then `xsel`. |
 | Copilot CLI history | The tool searches `~/.copilot/session-store.db` and `~/.copilot/command-history-state.json`. |
 
