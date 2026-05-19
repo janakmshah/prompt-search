@@ -28,24 +28,7 @@ Long-running Copilot CLI workflows often contain prompts worth reusing: PR revie
 
 ## Demo
 
-```text
-Prompt Search:
-
- All    Sessions    History
-
-Search: rubber duck
-167 matches
-
-  #     Prompt
-> 1.    rubber duck to ensure we haven't...
-        Session: Review iOS Pull Request  Type: Session  When: 2m ago
-  2.    rubber duck the late 4 commits...
-        Session: Review iOS Pull Request  Type: Session  When: 2h ago
-  3.    Rubber duck these changes
-        Session: Review Pull Request      Type: Session  When: 8h ago
-
-/ search | Up/Down navigate | Tab switch tabs | Enter copy+print | Ctrl+P print | Esc cancel
-```
+![prompt-search interactive demo showing search results for "interactively"](./assets/demo.png)
 
 ## Requirements
 
@@ -225,6 +208,8 @@ node ./bin/prompt-search.js --print --limit 3 "fast path"
 
 ```text
 .
+├── assets/
+│   └── demo.png             # README demo screenshot
 ├── bin/
 │   └── prompt-search.js   # CLI entrypoint and interactive picker
 ├── scripts/
